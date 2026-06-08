@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CircuitPro Professional</title>
+<title>CircuitPro Professional - Menor Quilometragem</title>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/lucide@latest"></script>
 <script src="https://unpkg.com/tesseract.js@v2.1.0/dist/tesseract.min.js"></script>
@@ -40,7 +40,7 @@ body{
         </div>
         <div>
             <h1 class="font-black text-xl">CircuitPro</h1>
-            <p class="text-xs text-indigo-400">Logística Inteligente</p>
+            <p class="text-xs text-indigo-400">Menor Quilometragem</p>
         </div>
     </div>
 
@@ -95,7 +95,7 @@ body{
         </div>
     </div>
 
-    <button onclick="iniciarRoteirizacao()" class="bg-emerald-600 w-full p-4 rounded-2xl font-black text-lg">🚀 ROTEIRIZAR AGORA</button>
+    <button onclick="iniciarRoteirizacao()" class="bg-emerald-600 w-full p-4 rounded-2xl font-black text-lg">🚀 CALCULAR MENOR ROTA</button>
 </aside>
 
 <!-- CONTEÚDO PRINCIPAL -->
@@ -140,11 +140,11 @@ body{
         </iframe>
     </div>
 
-    <!-- 📋 ORDEM OTIMIZADA -->
+    <!-- 📋 ORDEM OTIMIZADA + DISTÂNCIA TOTAL -->
     <div class="card p-5 mb-6">
-        <h2 class="font-bold text-xl mb-4 flex items-center gap-2">📋 Ordem da Rota Otimizada</h2>
+        <h2 class="font-bold text-xl mb-4 flex items-center gap-2">📋 Ordem da Rota <span id="distanciaTotal" class="text-emerald-400 text-lg ml-2"></span></h2>
         <div id="listaRotaOtimizada" class="space-y-3">
-            <div class="text-slate-500 text-center py-6">Aguardando roteirização...</div>
+            <div class="text-slate-500 text-center py-6">Aguardando cálculo...</div>
         </div>
     </div>
 
@@ -308,7 +308,7 @@ async function pegarCoordenadas(endereco){
 }
 
 
-// 📏 DISTÂNCIA
+// 📏 DISTÂNCIA ENTRE DOIS PONTOS (KM)
 function calcularDistanciaKM(lat1, lng1, lat2, lng2){
     const R = 6371;
     const dLat = (lat2 - lat1)*Math.PI/180;
@@ -317,14 +317,42 @@ function calcularDistanciaKM(lat1, lng1, lat2, lng2){
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
+// 📏 DISTÂNCIA TOTAL DE UMA SEQUÊNCIA
+function calcularDistanciaTotal(sequencia, pontoInicial){
+    let total = 0;
+    let atual = pontoInicial;
+    for(let parada of sequencia){
+        total += calcularDistanciaKM(atual.lat, atual.lng, parada.lat, parada.lng);
+        atual = parada;
+    }
+    return total;
+}
 
-// 🚀 ROTEIRIZAR
+// 🔄 GERAR PERMUTAÇÕES (PARA TESTAR TODAS AS ORDENS)
+function permutar(arr){
+    if(arr.length===0) return [];
+    if(arr.length===1) return [arr];
+    let resultado = [];
+    for(let i=0; i<arr.length; i++){
+        const atual = arr[i];
+        const resto = arr.slice(0,i).concat(arr.slice(i+1));
+        const permRest = permutar(resto);
+        for(let p of permRest){
+            resultado.push([atual].concat(p));
+        }
+    }
+    return resultado;
+}
+
+
+// 🚀 ALGORITMO: MENOR QUILOMETRAGEM TOTAL
 async function iniciarRoteirizacao(){
     if(entregasAdicionadas.length===0) return alert("⚠️ Adicione entregas primeiro!");
     if(!minhaLat || !minhaLng) return alert("⚠️ Atualize sua localização primeiro!");
 
-    alert("⏳ Calculando melhor rota...");
+    alert("⏳ Calculando rota com MENOR quilometragem...");
 
+    // 1. Pegar coordenadas de todas
     for(let e of entregasAdicionadas){
         if(!e.lat || !e.lng){
             const coord = await pegarCoordenadas(e.endereco);
@@ -333,20 +361,74 @@ async function iniciarRoteirizacao(){
         }
     }
 
-    let listaNaoVisitada = [...entregasAdicionadas];
-    let pontoAtual = {lat:minhaLat, lng:minhaLng};
-    rotaOtimizada = [];
+    const lista = [...entregasAdicionadas];
+    const origem = {lat:minhaLat, lng:minhaLng};
 
-    while(listaNaoVisitada.length>0){
-        let indiceMaisProximo = 0;
-        let menorDistancia = Infinity;
-        for(let i=0; i<listaNaoVisitada.length; i++){
-            const dist = calcularDistanciaKM(pontoAtual.lat, pontoAtual.lng, listaNaoVisitada[i].lat, listaNaoVisitada[i].lng);
-            if(dist < menorDistancia){ menorDistancia = dist; indiceMaisProximo = i; }
+    // 2. Se até 8 pontos: testa TODAS as ordens (resultado EXATO)
+    if(lista.length <= 8){
+        const todasOrdens = permutar(lista);
+        let menorDist = Infinity;
+        let melhorOrdem = lista;
+
+        for(let ordem of todasOrdens){
+            const dist = calcularDistanciaTotal(ordem, origem);
+            if(dist < menorDist){
+                menorDist = dist;
+                melhorOrdem = ordem;
+            }
         }
-        const proximo = listaNaoVisitada.splice(indiceMaisProximo,1)[0];
-        rotaOtimizada.push(proximo);
-        pontoAtual = {lat:proximo.lat, lng:proximo.lng};
+        rotaOtimizada = melhorOrdem;
+        document.getElementById("distanciaTotal").innerText = `| Total: ${menorDist.toFixed(1)} km`;
+    }
+    else{
+        // 3. Mais de 8 pontos: usa método 2-Opt (melhora muito o vizinho próximo)
+        // Começa com vizinho próximo, depois otimiza trocando pares
+        let atual = origem;
+        let naoVisitadas = [...lista];
+        rotaOtimizada = [];
+
+        // Primeiro: vizinho próximo
+        while(naoVisitadas.length>0){
+            let proxIdx = 0;
+            let menor = Infinity;
+            for(let i=0; i<naoVisitadas.length; i++){
+                const d = calcularDistanciaKM(atual.lat, atual.lng, naoVisitadas[i].lat, naoVisitadas[i].lng);
+                if(d < menor){ menor = d; proxIdx = i; }
+            }
+            const p = naoVisitadas.splice(proxIdx,1)[0];
+            rotaOtimizada.push(p);
+            atual = p;
+        }
+
+        // Agora otimiza com 2-Opt
+        let melhorou;
+        do{
+            melhorou = false;
+            for(let i=0; i<rotaOtimizada.length-2; i++){
+                for(let j=i+2; j<rotaOtimizada.length; j++){
+                    const dAntes = calcularDistanciaKM(
+                        i===0 ? origem : rotaOtimizada[i-1], rotaOtimizada[i]
+                    ) + calcularDistanciaKM(rotaOtimizada[j], j===rotaOtimizada.length-1 ? rotaOtimizada[j] : rotaOtimizada[j+1]);
+
+                    const dDepois = calcularDistanciaKM(
+                        i===0 ? origem : rotaOtimizada[i-1], rotaOtimizada[j]
+                    ) + calcularDistanciaKM(rotaOtimizada[i], j===rotaOtimizada.length-1 ? rotaOtimizada[j] : rotaOtimizada[j+1]);
+
+                    if(dDepois < dAntes){
+                        // Troca trecho
+                        rotaOtimizada = [
+                            ...rotaOtimizada.slice(0,i),
+                            ...rotaOtimizada.slice(i,j+1).reverse(),
+                            ...rotaOtimizada.slice(j+1)
+                        ];
+                        melhorou = true;
+                    }
+                }
+            }
+        }while(melhorou);
+
+        const totalFinal = calcularDistanciaTotal(rotaOtimizada, origem);
+        document.getElementById("distanciaTotal").innerText = `| Total: ${totalFinal.toFixed(1)} km`;
     }
 
     entregasAdicionadas = [];
@@ -354,7 +436,7 @@ async function iniciarRoteirizacao(){
     atualizarListaRota();
     atualizarPainelEntrega();
     salvarTudo();
-    alert("✅ Rota pronta!");
+    alert("✅ Rota calculada com MENOR distância total!");
 }
 
 
@@ -362,7 +444,7 @@ async function iniciarRoteirizacao(){
 function atualizarListaRota(){
     const div = document.getElementById("listaRotaOtimizada");
     if(rotaOtimizada.length===0){
-        div.innerHTML = `<div class="text-slate-500 text-center py-6">Aguardando roteirização...</div>`;
+        div.innerHTML = `<div class="text-slate-500 text-center py-6">Aguardando cálculo...</div>`;
         return;
     }
     div.innerHTML="";
