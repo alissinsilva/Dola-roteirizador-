@@ -126,6 +126,20 @@ body{
         </div>
     </div>
 
+    <!-- 📸 STREET VIEW -->
+    <div id="painelStreetView" class="card p-4 mb-6 hidden">
+        <h3 class="font-bold mb-3 flex items-center gap-2">📸 Vista da Rua (Street View)</h3>
+        <iframe 
+            id="streetViewFrame"
+            width="100%" 
+            height="350" 
+            style="border:0; border-radius:12px;" 
+            allowfullscreen
+            loading="lazy"
+            referrerpolicy="no-referrer-when-downgrade">
+        </iframe>
+    </div>
+
     <!-- 📋 ORDEM OTIMIZADA -->
     <div class="card p-5 mb-6">
         <h2 class="font-bold text-xl mb-4 flex items-center gap-2">📋 Ordem da Rota Otimizada</h2>
@@ -370,14 +384,26 @@ function atualizarListaRota(){
 // 🚚 PAINEL ATUAL
 function atualizarPainelEntrega(){
     const painel = document.getElementById("painelEntregaAtual");
+    const painelStreet = document.getElementById("painelStreetView");
+    const frameStreet = document.getElementById("streetViewFrame");
+
     if(rotaOtimizada.length===0){
         painel.classList.add("hidden");
+        painelStreet.classList.add("hidden");
         return;
     }
     painel.classList.remove("hidden");
+    painelStreet.classList.remove("hidden");
+
     const atual = rotaOtimizada[0];
     document.getElementById("idPacoteAtual").innerText = atual.idPacote;
     document.getElementById("enderecoAtual").innerText = atual.endereco;
+
+    // Atualiza Street View com as coordenadas
+    if(atual.lat && atual.lng){
+        frameStreet.src = `https://www.google.com/maps/embed?pb=!1m0!2m1!1e1!3m2!1s${atual.lat}!2s${atual.lng}!4v1!4m0!5m1!1s${atual.lat},${atual.lng}`;
+    }
+
     atualizarListaRota();
 }
 
