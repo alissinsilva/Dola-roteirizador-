@@ -50,10 +50,15 @@ body{
         <input id="packageIdInput" type="text" class="w-full p-3 rounded-xl bg-slate-900 border border-slate-700 mb-3" placeholder="#PK-001">
         <label class="text-xs block mb-1">ENDEREÇO COMPLETO</label>
         <input id="addressInput" type="text" class="w-full p-3 rounded-xl bg-slate-900 border border-slate-700 mb-3" placeholder="Rua, Número, Bairro - Cidade">
-        <div class="grid grid-cols-2 gap-2">
+        
+        <div class="grid grid-cols-2 gap-2 mb-2">
             <button onclick="addStop()" class="bg-indigo-600 p-3 rounded-xl font-bold">Adicionar</button>
             <button onclick="openScanner()" class="bg-slate-800 p-3 rounded-xl">OCR</button>
         </div>
+
+        <button onclick="limparCampos()" class="bg-amber-600 hover:bg-amber-700 w-full p-3 rounded-xl font-bold transition">
+            🧹 Limpar Campos
+        </button>
     </div>
 
     <!-- 📋 LISTA DE ENTREGAS ADICIONADAS / PENDENTES -->
@@ -208,15 +213,20 @@ function addStop(){
     salvarTudo();
 }
 
+// 🧹 LIMPAR CAMPOS DE DIGITAÇÃO
+function limparCampos(){
+    document.getElementById("packageIdInput").value = "";
+    document.getElementById("addressInput").value = "";
+}
 
-// 📋 ATUALIZA LISTA DE PENDENTES
+
+// 📋 LISTA PENDENTES
 function atualizarTelaPendentes(){
     const div = document.getElementById("listaPendentes");
     if(entregasAdicionadas.length ===0){
         div.innerHTML = `<div class="text-slate-500 text-sm text-center py-3">Nenhuma entrega adicionada ainda</div>`;
         return;
     }
-
     div.innerHTML = "";
     entregasAdicionadas.forEach((entrega, indice)=>{
         const el = document.createElement("div");
@@ -248,16 +258,14 @@ function atualizarEstatisticas(){
 }
 
 
-// 📍 PEGAR MINHA LOCALIZAÇÃO
+// 📍 LOCALIZAÇÃO
 function pegarMinhaLocalizacao(){
     const status = document.getElementById("statusGPS");
     status.innerText = "⏳ Obtendo localização...";
-
     if(!navigator.geolocation){
-        status.innerText = "❌ GPS não suportado no navegador";
+        status.innerText = "❌ GPS não suportado";
         return;
     }
-
     navigator.geolocation.getCurrentPosition(
         pos=>{
             minhaLat = pos.coords.latitude;
@@ -265,17 +273,15 @@ function pegarMinhaLocalizacao(){
             status.innerHTML = `✅ Lat: ${minhaLat.toFixed(5)} <br> Lng: ${minhaLng.toFixed(5)}`;
         },
         erro=>{
-            status.innerText = "❌ Não foi possível pegar localização";
-            // Posição padrão Juiz de Fora
-            minhaLat = -21.7595;
-            minhaLng = -43.3424;
+            status.innerText = "❌ Não foi possível obter localização";
+            minhaLat = -21.7595; minhaLng = -43.3424;
         },
         {enableHighAccuracy:true, timeout:12000}
     );
 }
 
 
-// 📍 CONVERTER ENDEREÇO EM COORDENADAS
+// 📍 COORDENADAS
 async function pegarCoordenadas(endereco){
     try{
         const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(endereco)}&countrycodes=BR&limit=1`);
@@ -288,7 +294,7 @@ async function pegarCoordenadas(endereco){
 }
 
 
-// 📏 CALCULAR DISTÂNCIA KM
+// 📏 DISTÂNCIA
 function calcularDistanciaKM(lat1, lng1, lat2, lng2){
     const R = 6371;
     const dLat = (lat2 - lat1)*Math.PI/180;
@@ -298,29 +304,21 @@ function calcularDistanciaKM(lat1, lng1, lat2, lng2){
 }
 
 
-// 🚀 ROTEIRIZAR: SEMPRE DO MAIS PRÓXIMO AO MAIS LONGE
+// 🚀 ROTEIRIZAR
 async function iniciarRoteirizacao(){
     if(entregasAdicionadas.length===0) return alert("⚠️ Adicione entregas primeiro!");
     if(!minhaLat || !minhaLng) return alert("⚠️ Atualize sua localização primeiro!");
 
-    alert("⏳ Calculando melhor rota... aguarde um instante");
+    alert("⏳ Calculando melhor rota...");
 
-    // Converter todos endereços
     for(let e of entregasAdicionadas){
         if(!e.lat || !e.lng){
             const coord = await pegarCoordenadas(e.endereco);
-            if(coord){
-                e.lat = coord.lat;
-                e.lng = coord.lng;
-            }else{
-                // Se não achar, coloca próximo
-                e.lat = minhaLat + (Math.random()*0.08 -0.04);
-                e.lng = minhaLng + (Math.random()*0.08 -0.04);
-            }
+            if(coord){ e.lat = coord.lat; e.lng = coord.lng; }
+            else{ e.lat = minhaLat+(Math.random()*0.08-0.04); e.lng=minhaLng+(Math.random()*0.08-0.04); }
         }
     }
 
-    // 🧠 ALGORITMO VIZINHO MAIS PRÓXIMO
     let listaNaoVisitada = [...entregasAdicionadas];
     let pontoAtual = {lat:minhaLat, lng:minhaLng};
     rotaOtimizada = [];
@@ -328,15 +326,10 @@ async function iniciarRoteirizacao(){
     while(listaNaoVisitada.length>0){
         let indiceMaisProximo = 0;
         let menorDistancia = Infinity;
-
-        for(let i=0; i < listaNaoVisitada.length; i++){
+        for(let i=0; i<listaNaoVisitada.length; i++){
             const dist = calcularDistanciaKM(pontoAtual.lat, pontoAtual.lng, listaNaoVisitada[i].lat, listaNaoVisitada[i].lng);
-            if(dist < menorDistancia){
-                menorDistancia = dist;
-                indiceMaisProximo = i;
-            }
+            if(dist < menorDistancia){ menorDistancia = dist; indiceMaisProximo = i; }
         }
-
         const proximo = listaNaoVisitada.splice(indiceMaisProximo,1)[0];
         rotaOtimizada.push(proximo);
         pontoAtual = {lat:proximo.lat, lng:proximo.lng};
@@ -347,11 +340,11 @@ async function iniciarRoteirizacao(){
     atualizarListaRota();
     atualizarPainelEntrega();
     salvarTudo();
-    alert("✅ Rota pronta! Ordenada do mais próximo ao mais distante.");
+    alert("✅ Rota pronta!");
 }
 
 
-// 📋 ATUALIZAR LISTA DA ROTA
+// 📋 LISTA ROTA
 function atualizarListaRota(){
     const div = document.getElementById("listaRotaOtimizada");
     if(rotaOtimizada.length===0){
@@ -363,9 +356,9 @@ function atualizarListaRota(){
         const el = document.createElement("div");
         el.className = `p-4 rounded-xl border flex gap-4 items-center ${i===0 ? "bg-indigo-900/40 border-indigo-500" : "bg-slate-900 border-slate-700"}`;
         el.innerHTML = `
-            <div class="w-9 h-9 rounded-full bg-indigo-600 font-bold flex items-center justify-center shrink-0">${i+1}</div>
+            <div class="w-9 h-9 rounded-full bg-indigo-600 font-bold flex items-center justify-center">${i+1}</div>
             <div>
-                <div class="font-bold ${i===0 ? 'text-white':'text-indigo-300'}">${e.idPacote}</div>
+                <div class="font-bold ${i===0?'text-white':'text-indigo-300'}">${e.idPacote}</div>
                 <div class="text-sm text-slate-300">${e.endereco}</div>
             </div>
         `;
@@ -374,7 +367,7 @@ function atualizarListaRota(){
 }
 
 
-// 🚚 PAINEL DA ENTREGA ATUAL
+// 🚚 PAINEL ATUAL
 function atualizarPainelEntrega(){
     const painel = document.getElementById("painelEntregaAtual");
     if(rotaOtimizada.length===0){
@@ -389,7 +382,7 @@ function atualizarPainelEntrega(){
 }
 
 
-// ✅ MARCAR COMO ENTREGUE E ABRIR PRÓXIMA
+// ✅ MARCAR ENTREGUE E IR PROXIMO
 function marcarComoEntregueEIrProximo(){
     if(rotaOtimizada.length===0) return;
 
@@ -401,24 +394,36 @@ function marcarComoEntregueEIrProximo(){
     atualizarEstatisticas();
     salvarTudo();
 
-    // 🚪 ABRIR GOOGLE MAPS PARA A PRÓXIMA AUTOMATICAMENTE
-    if(rotaOtimizada.length>0){
-        setTimeout(()=>{
-            abrirNoGoogleMaps();
-        },400);
-    }else{
-        alert("🏁 TODAS AS ENTREGAS FORAM FINALIZADAS!");
+    // 🔁 SE AINDA TEM PROXIMA, ABRE O MAPA
+    if(rotaOtimizada.length > 0){
+        setTimeout(() => abrirNoGoogleMaps(), 400);
+    } 
+    else 
+    {
+        // 🧹 LIMPAR TUDO MESMO - ZERA TUDO DO ZERO
+        alert("🏁 TODAS AS ENTREGAS FINALIZADAS!\nO sistema será reiniciado para uma nova viagem.");
+        
+        entregasAdicionadas = [];
+        rotaOtimizada = [];
+        entregasConcluidas = [];
+        
+        localStorage.clear(); // apaga tudo salvo
+        
+        atualizarTelaPendentes();
+        atualizarListaRota();
+        atualizarListaEntregues();
+        atualizarEstatisticas();
+        atualizarPainelEntrega();
     }
 }
 
 
-// 🗺️ ABRIR NO GOOGLE MAPS
+// 🗺️ ABRIR MAPA
 function abrirNoGoogleMaps(){
     if(rotaOtimizada.length===0) return;
     const end = rotaOtimizada[0].endereco;
     window.open(`https://www.google.com/maps/dir/?api=1&origin=${minhaLat},${minhaLng}&destination=${encodeURIComponent(end)}&travelmode=driving`, "_blank");
 }
-
 
 function ignorarEntrega(){
     if(rotaOtimizada.length===0) return;
@@ -428,7 +433,7 @@ function ignorarEntrega(){
 }
 
 
-// ✅ LISTA DE ENTREGUES
+// ✅ LISTA ENTREGUES
 function atualizarListaEntregues(){
     const div = document.getElementById("listaEntregues");
     if(entregasConcluidas.length===0){
@@ -445,7 +450,7 @@ function atualizarListaEntregues(){
 }
 
 
-// 📤 IMPORTAR CSV
+// 📤 CSV
 function importCSV(){
     const arquivo = document.getElementById("csvFile").files[0];
     if(!arquivo) return alert("Escolha um arquivo .csv");
@@ -465,7 +470,7 @@ function importCSV(){
         atualizarTelaPendentes();
         atualizarEstatisticas();
         salvarTudo();
-        alert("✅ Importado com sucesso!");
+        alert("✅ Importado!");
     };
     ler.readAsText(arquivo,"UTF-8");
 }
@@ -477,14 +482,12 @@ async function openScanner(){
         fluxoCamera = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
         document.getElementById("modalScanner").classList.remove("hidden");
         document.getElementById("videoCamera").srcObject = fluxoCamera;
-    }catch(e){alert("❌ Câmera não disponível")}
+    }catch(e){alert("❌ Câmera indisponível")}
 }
-
 function fecharScanner(){
     if(fluxoCamera) fluxoCamera.getTracks().forEach(t=>t.stop());
     document.getElementById("modalScanner").classList.add("hidden");
 }
-
 async function capturarTexto(){
     const v = document.getElementById("videoCamera");
     const c = document.getElementById("telaOculta");
@@ -497,9 +500,9 @@ async function capturarTexto(){
         if(texto.length>6){
             document.getElementById("addressInput").value = texto;
             fecharScanner();
-            alert("✅ Endereço lido com sucesso");
-        }else alert("❌ Não foi possível ler o endereço");
-    }catch(e){alert("❌ Erro ao ler imagem")}
+            alert("✅ Endereço capturado!");
+        }else alert("❌ Não foi possível ler");
+    }catch(e){alert("❌ Erro ao processar imagem")}
 }
 
 
